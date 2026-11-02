@@ -1,0 +1,10 @@
+# Keys must never be committed
+*-key.json
+*key*.json
+
+__pycache__/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ipynb_checkpoints/
