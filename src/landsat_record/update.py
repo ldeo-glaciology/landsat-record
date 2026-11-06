@@ -85,10 +85,10 @@ def cog_folder(bands, fallback):
     return fallback
 
 
-def process(record, cog_prefix):
-    """Crop, convert and render record.run_items. Returns their index entries and their scenes and bands rows, with
-    keys in the published site's folders."""
-    record.check_access()
+def process(record, cog_prefix, probe):
+    """Crop, convert and render record.run_items, after checking access by reading the probe scene. Returns their
+    index entries and their scenes and bands rows, with keys in the published site's folders."""
+    record.check_access(probe)
     record.crop()
     record.cogs()
     entries = record.browse()["scenes"]
@@ -168,7 +168,11 @@ def update_site(name, test=False, publish_to=publish_step.DEFAULT_PUBLISH_TO, ke
         record.run_items = new + failed
         say(f"\n[3/4] Crop, convert and render the new and failed scenes: {len(record.run_items)}")
         if record.run_items:
-            fresh = process(record, cog_folder(bands, dest_root))
+            # Not a scene that failed before: some can never be read (USGS denies access to every file of two Flask
+            # scenes), which would look like missing credentials
+            done_ok = set(scenes.scene_id[scenes.scene_status == "ok"])
+            probe = (new or [item for item in record.items if item.id in done_ok] or record.run_items)[-1]
+            fresh = process(record, cog_folder(bands, dest_root), probe)
         else:
             fresh = [], scenes.iloc[:0], bands.iloc[:0]
         replaced = {item.id for item in record.run_items} | set(withdrawn)

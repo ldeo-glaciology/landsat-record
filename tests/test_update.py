@@ -129,8 +129,13 @@ def test_update_retries_scenes_that_failed(site, items, sources, tmp_path, bucke
     status = lambda: pd.read_parquet(published(bucket) / "scenes.parquet").set_index("scene_id").scene_status[broken]
     assert status() == "error"
 
+    # The access check reads a scene that published fine, since a failed one may be unreadable
     monkeypatch.setattr(crop, "crop_band", working)
+    real_check = crop.check_access
+    probed = []
+    monkeypatch.setattr(crop, "check_access", lambda item, bounds: probed.append(item.id) or real_check(item, bounds))
     assert update_site("flask_tiny", publish_to=PUBLISH_TO, dest_fs=bucket, workers=4) == Changes([], [broken], [])
+    assert len(probed) == 1 and probed[0] != broken
     assert status() == "ok"
     entry = next(e for e in json.loads((published(bucket) / "index.json").read_text())["scenes"] if e["id"] == broken)
     assert "rgb" in entry["images"]

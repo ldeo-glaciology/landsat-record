@@ -148,11 +148,14 @@ class LandsatRecord:
             say(f"Test sample: {len(self.run_items)} scenes")
         return self.run_items
 
-    def check_access(self):
-        """Read one window from the requester-pays bucket, so a run fails now rather than hours in."""
-        if self.run_items is None:
-            self.search()
-        say(crop_step.check_access(self.run_items[-1], self.site.bounds))
+    def check_access(self, item=None):
+        """Read one window from the requester-pays bucket, so a run fails now rather than hours in. Uses item, or the
+        newest scene this run processes."""
+        if item is None:
+            if self.run_items is None:
+                self.search()
+            item = self.run_items[-1]
+        say(crop_step.check_access(item, self.site.bounds))
 
     def save_site(self):
         with self.fs.open(f"{self.out_root}/site.json", "w") as f:
