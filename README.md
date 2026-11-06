@@ -11,8 +11,9 @@ Build a browsable record of **every Landsat scene over an Antarctic site** with 
 It can then publish the page and data to a public bucket, so anyone can open it with no login.
 
 It is made for [CryoCloud](https://cryointhecloud.com), which can read the requester-pays USGS Landsat bucket and
-gives you a scratch folder to work in. **Antarctica only:** every Antarctic scene is delivered in EPSG:3031, which the
-cropping relies on.
+gives you a scratch folder to work in. Once a site is published, `landsat-record update` adds new scenes as USGS
+releases them, and that also runs on your own computer. **Antarctica only:** every Antarctic scene is delivered in
+EPSG:3031, which the cropping relies on.
 
 ## Install
 
@@ -45,6 +46,9 @@ landsat-record run fossil_bluff
 
 # 3. Publish it (once you've stored a key, below)
 landsat-record run fossil_bluff --from publish --publish
+
+# 4. Later, add the scenes USGS has released since (see "Keeping a site up to date")
+landsat-record update fossil_bluff
 ```
 
 Step 2 can also publish in the same go: `landsat-record run fossil_bluff --publish`.
@@ -132,7 +136,30 @@ landsat-record login ~/ldeo-glaciology-key.json --remove-original
 **Before publishing, note:**
 - Everything published is readable by anyone. Landsat data is public domain.
 - Downloads are billed to the bucket's owner.
-- After `landsat-record update-viewer <site>` replaces a published page, people may see the old page for up to an hour, because of the bucket's caching.
+- The viewer page, index and tables are published with `Cache-Control: no-cache`, so changes show the next time the page is opened. Copies published by versions before 0.2 are cached for up to an hour, so the first change after upgrading can take that long to appear.
+
+## Keeping a site up to date
+
+New scenes reach the USGS catalogue within about a week of being acquired. To add them to a published site:
+
+```bash
+landsat-record update fossil_bluff --dry-run   # what would change; needs no key
+landsat-record update fossil_bluff
+```
+
+**What `update` does:**
+- **Works from the published site, not scratch.** The published `index.json` holds the outline, and the published tables say which scenes are done. So it doesn't matter that CryoCloud deletes scratch files 7 days after they're written.
+- **Processes only what has changed.** It crops, converts and renders the new scenes, plus any that failed before, then publishes them with the updated index and tables. A few new scenes take minutes.
+- **Drops scenes USGS has withdrawn** from its catalogue, usually to reprocess them. They come back under new IDs, which the next update adds. Their old files stay in the bucket. If a large share of the published scenes seems to be missing, it stops and changes nothing, because that points at a failed search.
+- **Gives the same result as a full run:** the published site is what `run --publish` would make from scratch.
+- **Is safe to repeat.** With nothing to do, it says so and changes nothing, so run it as often as you like.
+
+**Running it on your own computer.** An update needs neither CryoCloud nor its scratch folder, just:
+1. **The package:** `pip install git+https://github.com/ldeo-glaciology/landsat-record` (Python 3.10 or later).
+2. **AWS credentials**, because the USGS bucket is requester-pays. Any AWS account will do. Install the [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) and run `aws configure` with an access key, or set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`. Reads are billed to that account. Outside AWS that's mainly the download, at most about half a cent per scene for a site 25–35 km across.
+3. **The bucket key**, stored once with `landsat-record login`, as above.
+
+A `--dry-run` needs only the package.
 
 ## What gets written
 
@@ -147,6 +174,7 @@ s3://nasa-cryo-scratch/<you>/landsat/<site>_cog/      what gets published
     <scene_id>/<scene_id>_<band>.tif                  Cloud Optimized GeoTIFFs, pixels identical to the crops
     browse/<band or rgb>/<scene_id>.webp              browse images, stretched per scene
     index.json, index.html                            the viewer's data and page
+    scenes.parquet, bands.parquet, items.json         the tables and catalogue, which `update` works from
 ```
 
 **Things to know about the data:**
@@ -175,6 +203,15 @@ record.scenes()          # pandas tables of what was done
 record.bands(cog=True)
 record.quicklook()       # needs matplotlib
 record.publish()         # returns the viewer's address
+```
+
+Updating a published site needs only its name:
+
+```python
+from landsat_record import update_site
+
+update_site("flask_region", dry_run=True)   # the new, failed and withdrawn scenes, by id
+update_site("flask_region")
 ```
 
 `examples/landsat_record_examples.ipynb` has more.

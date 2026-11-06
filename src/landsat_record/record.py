@@ -9,6 +9,7 @@ from . import browse as browse_step
 from . import cogs as cogs_step
 from . import crop as crop_step
 from . import publish as publish_step
+from .keys import require_key
 from .progress import say
 from .search import search_catalogue, select_test_items, summarise
 from .site import Site, SiteError
@@ -132,7 +133,7 @@ class LandsatRecord:
         return f"{self.out_root}_cog"
 
     def publish_root(self, publish_to=publish_step.DEFAULT_PUBLISH_TO):
-        return f"{publish_to.rstrip('/')}/{self.site.name}" + ("_test" if self.test else "")
+        return publish_step.site_root(publish_to, self.site.name, self.test)
 
     def search(self):
         """Every scene over the site, and the ones this run will process."""
@@ -211,7 +212,7 @@ class LandsatRecord:
         """
         dest_root = self.publish_root(publish_to)
         if dest_fs is None:
-            dest_fs = publish_step.gcs_filesystem(self._key(key_file))
+            dest_fs = publish_step.gcs_filesystem(require_key(key_file))
         copied = publish_step.publish(self, dest_fs, dest_root, workers or 2 * self.workers)
         say(f"Copied {copied} files to {dest_root}")
         return publish_step.public_url(dest_root)
@@ -220,17 +221,9 @@ class LandsatRecord:
         """Replace only the published index.html with this package's viewer page."""
         dest_root = self.publish_root(publish_to)
         if dest_fs is None:
-            dest_fs = publish_step.gcs_filesystem(self._key(key_file))
+            dest_fs = publish_step.gcs_filesystem(require_key(key_file))
         publish_step.update_viewer(self, dest_fs, dest_root)
         return publish_step.public_url(dest_root)
-
-    def _key(self, key_file):
-        from .keys import KeyFileError, find_key
-
-        key = find_key(key_file)
-        if key is None:
-            raise KeyFileError("no key to publish with. Run `landsat-record login KEYFILE` once, or pass --key-file")
-        return key
 
     def project_full_run(self):
         """After a test run: the time, size and request count of the full run, scaled from the test."""

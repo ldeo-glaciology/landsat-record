@@ -23,11 +23,12 @@ FAKE_PRIVATE_KEY = "-----BEGIN PRIVATE KEY-----\nNOT-A-REAL-KEY-c2VjcmV0LW1hdGVy
 
 class FakeGCS:
     """A bucket in a local folder that names its files the way gcsfs does ("bucket/path"), and remembers the content
-    type each was written with."""
+    type and cache control each was written with."""
 
     def __init__(self, root):
         self.root = Path(root)
         self.content_types = {}
+        self.cache_control = {}
 
     def local(self, path):
         return self.root / path.removeprefix("gs://")
@@ -36,11 +37,18 @@ class FakeGCS:
         base = self.local(path)
         return [str(p.relative_to(self.root)) for p in base.rglob("*") if p.is_file()] if base.exists() else []
 
-    def pipe_file(self, path, value, content_type=None):
+    def pipe_file(self, path, value, content_type=None, fixed_key_metadata=None):
         target = self.local(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(value)
         self.content_types[path] = content_type
+        self.cache_control[path] = (fixed_key_metadata or {}).get("cache_control")
+
+    def cat(self, path):
+        return self.local(path).read_bytes()
+
+    def invalidate_cache(self, path=None):
+        pass
 
 
 @pytest.fixture

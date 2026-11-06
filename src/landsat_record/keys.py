@@ -93,6 +93,14 @@ def find_key(explicit=None):
     return None
 
 
+def require_key(explicit=None):
+    """find_key, or an error saying how to store a key."""
+    key = find_key(explicit)
+    if key is None:
+        raise KeyFileError("no key to publish with. Run `landsat-record login KEYFILE` once, or pass --key-file")
+    return key
+
+
 def bucket_of(url):
     return url.removeprefix("gs://").split("/")[0]
 

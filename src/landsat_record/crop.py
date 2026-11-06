@@ -149,7 +149,8 @@ def check_access(item, bounds):
     except Exception as error:
         raise AccessError(
             f"can't read the requester-pays usgs-landsat bucket ({type(error).__name__}: {error}). "
-            "Run this on CryoCloud, where AWS credentials are set up, in us-west-2."
+            "CryoCloud has the AWS credentials this needs. Elsewhere, set some up with `aws configure` (or the "
+            "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY variables); reads are then billed to that AWS account."
         ) from error
     shape = "nothing (outside)" if data is None else f"{data.shape[1]} × {data.shape[0]} px"
     return f"AWS access OK: read {shape} of {item.id} {band} in {time.perf_counter() - start:.1f} s"

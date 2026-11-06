@@ -21,9 +21,10 @@ from .keys import (
     store_key,
     stored_key_path,
 )
-from .publish import DEFAULT_PUBLISH_TO
+from .publish import DEFAULT_PUBLISH_TO, public_url, site_root
 from .record import STAGES, LandsatRecord, default_scratch, resolve_site, scratch_filesystem, stored_site
 from .site import Site, SiteError, check_name
+from .update import update_site
 
 STAGE_TITLES = {
     "search": "Search the USGS catalogue",
@@ -39,6 +40,7 @@ examples:
   landsat-record run fossil_bluff --bbox -68.6 -71.5 -67.9 -71.2 --title "Fossil Bluff" --test
   landsat-record run fossil_bluff --publish
   landsat-record run flask_region --geojson sites/flask_region.geojson --title "Flask Glacier" --publish
+  landsat-record update flask_region         add the scenes released since it was published
 
 A run can be stopped (Ctrl-C) and restarted: finished files are kept and failed ones are tried again.
 Run "landsat-record run --help" for every option.
@@ -51,9 +53,19 @@ scratch folder; --publish copies the result to a public bucket so anyone can ope
 
 The outline is needed on a site's first run only: later runs reuse it, and refuse a different one."""
 
+UPDATE_DESCRIPTION = """\
+Adds the scenes USGS has released since a site was published, retries any that failed, drops any USGS has withdrawn
+(usually to reprocess them; they come back under new ids), then publishes the result.
+It works from the published site alone (its index.json and tables), not from scratch, so it takes minutes and runs
+anywhere with AWS credentials to read the requester-pays USGS bucket: CryoCloud as it is, or your own computer once
+`aws configure` has been run (reads are then billed to that AWS account, at well under a cent per scene).
 
-def add_common(parser, publishing=True):
-    parser.add_argument("--scratch", help="folder holding each site's folders, on S3 or local (default: s3://nasa-cryo-scratch/$JUPYTERHUB_USER/landsat)")
+Run it as often as you like: when there's nothing new or to retry, it says so and changes nothing."""
+
+
+def add_common(parser, publishing=True, scratch=True):
+    if scratch:
+        parser.add_argument("--scratch", help="folder holding each site's folders, on S3 or local (default: s3://nasa-cryo-scratch/$JUPYTERHUB_USER/landsat)")
     if publishing:
         parser.add_argument(
             "--publish-to",
@@ -112,6 +124,17 @@ def build_parser():
     viewer.add_argument("--test", action="store_true", help="the <site>_test copy")
     add_common(viewer)
     viewer.set_defaults(func=cmd_update_viewer)
+
+    update = commands.add_parser(
+        "update", help="add the scenes released since a site was published, working from the published site",
+        description=UPDATE_DESCRIPTION, formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    update.add_argument("site", help="site name")
+    update.add_argument("--test", action="store_true", help="the <site>_test copy")
+    update.add_argument("--dry-run", action="store_true", help="list the scenes it would add, writing nothing (needs no key)")
+    update.add_argument("--workers", type=int, default=16, help="threads (default: 16; publishing uses twice this)")
+    add_common(update, scratch=False)
+    update.set_defaults(func=cmd_update)
     return parser
 
 
@@ -271,6 +294,18 @@ def cmd_update_viewer(args):
     return 0
 
 
+def cmd_update(args):
+    check_name(args.site)
+    check_publish_to(args.publish_to)
+    dest_root = site_root(args.publish_to, args.site, args.test)
+    key = None if args.dry_run else publishing_key(args, dest_root)
+    print(f"Site     {dest_root}" + (f" as {client_email(key)}" if key else ""), flush=True)
+    changes = update_site(args.site, test=args.test, publish_to=args.publish_to, key_file=key, dry_run=args.dry_run, workers=args.workers)
+    if any(changes) and not args.dry_run:
+        print(f"\nViewer: {public_url(dest_root)}")
+    return 0
+
+
 def main(argv=None):
     args = build_parser().parse_args(argv)
     try:
@@ -279,5 +314,6 @@ def main(argv=None):
         print(f"landsat-record: error: {error}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
-        print("\nStopped. Finished files are kept: re-run the same command to continue.", file=sys.stderr)
+        kept = "" if args.command == "update" else " Finished files are kept:"
+        print(f"\nStopped.{kept} Re-run the same command to continue.", file=sys.stderr)
         return 130

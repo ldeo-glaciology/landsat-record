@@ -19,13 +19,21 @@ CONTENT_TYPES = {
     ".webp": "image/webp",
     ".tif": "image/tiff; application=geotiff; profile=cloud-optimized",
 }
-ALWAYS_COPY = {"index.html", "index.json", "bands.parquet", "scenes.parquet"}
+ALWAYS_COPY = {"index.html", "index.json", "bands.parquet", "scenes.parquet", "items.json"}
+# These change with every publish, so browsers and Google's caches must check for a newer copy rather than keep one
+# for the default hour. The data files never change once written.
+NO_CACHE = {"cache_control": "no-cache"}
 
 
 def gcs_filesystem(key_path):
+    """The bucket, written to with the key at key_path, or read anonymously when it's None."""
     import gcsfs
 
-    return gcsfs.GCSFileSystem(token=str(key_path))  # a path, so the key's contents are never held here
+    return gcsfs.GCSFileSystem(token=str(key_path) if key_path else "anon")  # a path, so the key's contents are never held here
+
+
+def site_root(publish_to, name, test=False):
+    return f"{publish_to.rstrip('/')}/{name}" + ("_test" if test else "")
 
 
 def public_url(dest_root):
@@ -33,9 +41,13 @@ def public_url(dest_root):
 
 
 def publish(record, dest_fs, dest_root, workers):
-    """Copy everything under the COG folder to dest_root, skipping files already there. Returns the number copied."""
+    """Copy everything under the COG folder to dest_root, skipping files already there. Returns the number copied.
+
+    The index and tables go last, so the published page never lists a scene whose files aren't there yet.
+    """
     fs = record.fs
     fs.invalidate_cache()
+    dest_fs.invalidate_cache()
     prefix = bare(record.cog_root) + "/"
     relative = [path[len(prefix):] for path in fs.find(record.cog_root)]
     already = set(dest_fs.find(dest_root))
@@ -48,7 +60,8 @@ def publish(record, dest_fs, dest_root, workers):
     def copy_one(rel):
         content_type = CONTENT_TYPES.get(Path(rel).suffix, "application/octet-stream")
         data = fs.cat(f"{record.cog_root}/{rel}")
-        dest_fs.pipe_file(f"{dest_root}/{rel}", data, content_type=content_type)
+        metadata = NO_CACHE if rel in ALWAYS_COPY else None
+        dest_fs.pipe_file(f"{dest_root}/{rel}", data, content_type=content_type, fixed_key_metadata=metadata)
         return len(data)
 
     def on_result(rel, size):
@@ -57,7 +70,8 @@ def publish(record, dest_fs, dest_root, workers):
         bar.set_postfix_str(f"{copied_bytes / 1e9:.2f} GB")
 
     with progress_bar(len(todo), "Publish", "files") as bar:
-        pool_map(copy_one, todo, workers, bar, on_result)
+        pool_map(copy_one, [rel for rel in todo if rel not in ALWAYS_COPY], workers, bar, on_result)
+        pool_map(copy_one, [rel for rel in todo if rel in ALWAYS_COPY], workers, bar, on_result)
     return len(todo)
 
 
@@ -67,5 +81,5 @@ def update_viewer(record, dest_fs, dest_root):
     Anyone who opened the old page may keep seeing it for up to an hour, because of the bucket's default caching.
     """
     html = viewer_html()
-    dest_fs.pipe_file(f"{dest_root}/index.html", html, content_type=CONTENT_TYPES[".html"])
+    dest_fs.pipe_file(f"{dest_root}/index.html", html, content_type=CONTENT_TYPES[".html"], fixed_key_metadata=NO_CACHE)
     record.fs.pipe_file(f"{record.cog_root}/index.html", html)

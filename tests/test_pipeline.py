@@ -20,7 +20,7 @@ class RecordingFS(LocalFileSystem):
         super().__init__(auto_mkdir=True)
         self.content_types = {}
 
-    def pipe_file(self, path, value, content_type=None, **kwargs):
+    def pipe_file(self, path, value, content_type=None, fixed_key_metadata=None, **kwargs):
         self.content_types[path] = content_type
         return super().pipe_file(path, value, **kwargs)
 

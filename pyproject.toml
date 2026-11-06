@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "landsat-record"
-version = "0.1.1"
+version = "0.2.0"
 description = "Crop the complete Landsat record to an Antarctic site and publish a viewer to browse it"
 readme = "README.md"
 license = "GPL-3.0-only"
