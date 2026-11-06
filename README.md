@@ -158,6 +158,9 @@ s3://nasa-cryo-scratch/<you>/landsat/<site>_cog/      what gets published
 
 ## From Python
 
+The same steps, one at a time. As on the command line, a site name keeps its first outline: give a new outline a new
+name, or `LandsatRecord` refuses it.
+
 ```python
 from landsat_record import LandsatRecord, Site
 

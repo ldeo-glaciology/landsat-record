@@ -38,23 +38,40 @@ def scratch_filesystem(scratch):
 
 
 def stored_site(name, scratch, fs):
-    """The site as recorded by an earlier run on scratch, or None.
+    """The site as recorded by earlier runs on scratch, or None.
 
-    Looks for site.json in the full and test folders, then for the index.json that runs made with the notebook left
-    in their _cog folders.
+    Looks for site.json in the full and test folders, and for the index.json that runs made with the notebook left
+    in their _cog folders. The first found is returned, but they must all have the same outline.
     """
     fs.invalidate_cache()
+    found = {}
     for folder in (name, f"{name}_test"):
         path = f"{scratch}/{folder}/site.json"
         if fs.exists(path):
-            return Site.from_json(json.loads(fs.cat(path)))
+            found[path] = Site.from_json(json.loads(fs.cat(path)))
     for folder in (f"{name}_cog", f"{name}_test_cog"):
         path = f"{scratch}/{folder}/index.json"
         if fs.exists(path):
             index = json.loads(fs.cat(path))
             title = index["title"].removesuffix(" Landsat record")
-            return Site(name, title, index["aoi_vertices"], f"earlier run, {folder}/index.json")
-    return None
+            found[path] = Site(name, title, index["aoi_vertices"], f"earlier run, {folder}/index.json")
+    if not found:
+        return None
+    first, *others = found.values()
+    if any(not site.same_outline(first) for site in others):
+        listing = "\n".join(f"  {path}: bounds {[round(v) for v in site.bounds]}" for path, site in found.items())
+        raise SiteError(
+            f"earlier runs of {name} used different outlines:\n{listing}\n"
+            "Delete the folders made with the wrong one (the _test folders are quick to rebuild)."
+        )
+    return first
+
+
+def outline_clash(name, stored, advice):
+    return SiteError(
+        f"{name} already exists on scratch with a different outline ({stored.source}, bounds "
+        f"{[round(v) for v in stored.bounds]}). {advice}"
+    )
 
 
 def resolve_site(name, given=None, stored=None, title=None):
@@ -64,10 +81,7 @@ def resolve_site(name, given=None, stored=None, title=None):
     A different outline for an existing site is refused, because the crops already made would no longer match it.
     """
     if given and stored and not given.same_outline(stored):
-        raise SiteError(
-            f"{name} already exists on scratch with a different outline ({stored.source}, bounds "
-            f"{[round(v) for v in stored.bounds]}). Use a new site name, or leave the outline out to reuse it."
-        )
+        raise outline_clash(name, stored, "Use a new site name, or leave the outline out to reuse it.")
     site = given or stored
     if site is None:
         raise SiteError(f"{name} hasn't been run before, so it needs an outline: --bbox, --bbox-3031 or --geojson")
@@ -88,6 +102,9 @@ class LandsatRecord:
 
     With test=True only a sample of about a dozen scenes covering every sensor is processed, into separate _test
     folders.
+
+    A site name keeps the outline it was first run with, for the test and the full record: a different outline under
+    the same name is refused, because finished crops are never redone and would still be for the old one.
     """
 
     def __init__(self, site, test=False, scratch=None, workers=16, fs=None):
@@ -96,6 +113,9 @@ class LandsatRecord:
         self.scratch = (scratch or default_scratch()).rstrip("/")
         self.workers = workers
         self.fs = fs or scratch_filesystem(self.scratch)
+        stored = stored_site(site.name, self.scratch, self.fs)
+        if stored and not site.same_outline(stored):
+            raise outline_clash(site.name, stored, "Give this outline a new site name.")
         self.item_collection = None
         self.items = None  # every catalogue scene, oldest first
         self.run_items = None  # the scenes this run processes

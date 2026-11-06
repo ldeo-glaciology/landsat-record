@@ -122,3 +122,9 @@ def test_stored_site_from_site_json_and_notebook_index(tmp_path):
     # The test folder's site.json is found for a full run, and wins over an index.json
     fs.pipe_file(f"{scratch}/fb_test/site.json", json.dumps(site.to_json()).encode())
     assert stored_site("fb", scratch, fs) == site
+
+    # Records that disagree are an error, rather than whichever is found first
+    other = Site.from_bbox("fb", -68.6, -71.5, -68.2, -71.3)
+    fs.pipe_file(f"{scratch}/fb_test/site.json", json.dumps(other.to_json()).encode())
+    with pytest.raises(SiteError, match=r"different outlines:\n.*fb_test/site.json.*\n.*fb_cog/index.json"):
+        stored_site("fb", scratch, fs)

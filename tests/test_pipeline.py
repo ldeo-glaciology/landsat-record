@@ -7,9 +7,10 @@ import rasterio
 from fsspec.implementations.local import LocalFileSystem
 
 import landsat_record.crop as crop
-from landsat_record import LandsatRecord
+from landsat_record import LandsatRecord, Site
 from landsat_record.browse import viewer_html
 from landsat_record.publish import ALWAYS_COPY, CONTENT_TYPES
+from landsat_record.site import SiteError
 
 
 class RecordingFS(LocalFileSystem):
@@ -157,3 +158,16 @@ def test_full_and_test_runs_use_separate_folders(site, sources, local_fs, scratc
     assert full.out_root == f"{scratch}/flask_tiny" and test.out_root == f"{scratch}/flask_tiny_test"
     assert test.cog_root == f"{scratch}/flask_tiny_test_cog"
     assert test.publish_root("gs://bucket/landsat/") == "gs://bucket/landsat/flask_tiny_test"
+
+
+def test_a_new_outline_under_an_existing_name_is_refused(record, sources, local_fs, scratch):
+    """Otherwise the finished crops for the old outline are skipped over and kept, and the new outline only changes the
+    search and the outline drawn on them."""
+    record.crop()
+    x0, y0, x1, y1 = record.site.bounds
+    moved = Site.from_bbox_3031(record.site.name, x0 - 2000, y0 + 2000, x0, y1 + 2000, title="Somewhere nearby")
+    for test in (True, False):  # one outline per site name, for the test and the full record
+        with pytest.raises(SiteError, match="different outline"):
+            LandsatRecord(moved, test=test, scratch=scratch, fs=local_fs)
+    assert LandsatRecord(record.site, test=True, scratch=scratch, fs=local_fs).out_root == record.out_root
+    assert LandsatRecord(Site.from_bbox_3031("nearby", *moved.bounds), scratch=scratch, fs=local_fs).out_root.endswith("/nearby")

@@ -11,5 +11,5 @@ Or from a terminal: landsat-record run fossil_bluff --bbox -68.6 -71.5 -67.9 -71
 from .record import LandsatRecord, stored_site
 from .site import Site, SiteError
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 __all__ = ["LandsatRecord", "Site", "SiteError", "stored_site", "__version__"]
